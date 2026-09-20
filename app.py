@@ -1,19 +1,21 @@
-from flask import Flask, request, render_template_string, session, redirect
+from flask import Flask, request, render_template_string, session, redirect, make_response
 import random
 import sqlite3
 from pathlib import Path
 import os
+import uuid
 
 app = Flask(__name__)
 app.secret_key = "adivinhedev-chave-secreta"
 
 BANCO = Path(__file__).with_name("ranking.db")
 
-app = Flask(__name__)
-app.secret_key = "adivinhedev-chave-secreta"
+ADMIN_SENHA = os.environ.get("ADMIN_SENHA", "adivinhedev-admin")
 
-BANCO = Path(__file__).with_name("ranking.db")
 
+# =========================================================
+# BANCO DE DADOS
+# =========================================================
 
 def conectar():
     conexao = sqlite3.connect(BANCO)
@@ -23,6 +25,7 @@ def conectar():
 
 def criar_banco():
     with conectar() as conexao:
+
         conexao.execute("""
             CREATE TABLE IF NOT EXISTS pontuacoes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,6 +34,15 @@ def criar_banco():
                 tentativas INTEGER NOT NULL,
                 resultado TEXT NOT NULL,
                 data DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conexao.execute("""
+            CREATE TABLE IF NOT EXISTS visitas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                visitante_id TEXT UNIQUE NOT NULL,
+                primeira_visita DATETIME DEFAULT CURRENT_TIMESTAMP,
+                ultima_visita DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
@@ -66,15 +78,27 @@ def buscar_historico(nome):
         """, (nome,)).fetchall()
 
 
+# =========================================================
+# HTML DO JOGO
+# =========================================================
+
 HTML = """
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
+
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AdivinheDev</title>
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>AdivinheDev 🎮</title>
 
     <style>
+
         * {
             box-sizing: border-box;
         }
@@ -82,373 +106,458 @@ HTML = """
         body {
             margin: 0;
             min-height: 100vh;
-            padding: 25px 12px;
+            padding: 20px;
             font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #111827, #2563eb);
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            background: linear-gradient(
+                135deg,
+                #2563eb,
+                #1e3a8a
+            );
         }
 
-        .caixa {
+        .container {
             width: 100%;
-            max-width: 950px;
+            max-width: 900px;
+            margin: auto;
+        }
+
+        .card {
             background: white;
             border-radius: 25px;
-            padding: 40px;
-            text-align: center;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,.25);
+            margin-bottom: 25px;
         }
 
         h1 {
-            font-size: 48px;
-            margin: 0 0 20px;
+            text-align: center;
+            margin-top: 0;
+            color: #111827;
         }
 
         h2 {
-            font-size: 28px;
+            color: #111827;
         }
 
-        p {
-            font-size: 20px;
+        .subtitulo {
+            text-align: center;
+            color: #6b7280;
         }
 
         input {
-            width: 90%;
-            max-width: 500px;
-            padding: 16px;
-            margin: 10px;
-            font-size: 20px;
-            text-align: center;
-            border: 2px solid #aaa;
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #d1d5db;
             border-radius: 12px;
-        }
-
-        input:focus {
-            outline: 2px solid #2563eb;
+            font-size: 18px;
+            margin: 8px 0;
         }
 
         button {
-            padding: 15px 25px;
-            margin: 10px 5px;
-            font-size: 19px;
+            width: 100%;
+            padding: 15px;
             border: none;
             border-radius: 12px;
             background: #2563eb;
             color: white;
+            font-size: 18px;
+            font-weight: bold;
             cursor: pointer;
+            margin-top: 10px;
         }
 
         button:hover {
             background: #1d4ed8;
         }
 
-        .tentativas {
-            font-size: 23px;
-            margin: 20px;
-        }
-
         .mensagem {
-            font-size: 25px;
-            font-weight: bold;
-            margin: 20px;
-        }
-
-        .eficiencia {
-            font-size: 30px;
-            font-weight: bold;
-            margin: 20px;
-            color: #2563eb;
-        }
-
-        .painel {
-            margin-top: 35px;
-            padding: 25px;
-            background: #f3f4f6;
-            border-radius: 18px;
-            text-align: left;
-        }
-
-        .painel h2 {
+            margin-top: 20px;
+            padding: 18px;
+            border-radius: 15px;
+            background: #eff6ff;
             text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .tentativas {
+            text-align: center;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+
+        .numero {
+            text-align: center;
+            font-size: 50px;
+            margin: 15px 0;
+        }
+
+        .ranking {
+            margin-top: 20px;
+        }
+
+        .linha {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 10px;
+            background: #f3f4f6;
+        }
+
+        .historico {
+            overflow-x: auto;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 15px;
         }
 
-        th, td {
-            padding: 12px 8px;
-            border-bottom: 1px solid #d1d5db;
+        th,
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
             text-align: center;
-            font-size: 16px;
         }
 
         th {
-            background: #e5e7eb;
+            background: #f3f4f6;
         }
 
-        .vazio {
+        .vitoria {
+            color: #16a34a;
+            font-weight: bold;
+        }
+
+        .derrota {
+            color: #dc2626;
+            font-weight: bold;
+        }
+
+        .novo-jogo {
+            background: #111827;
+        }
+
+        .admin-link {
+            display: block;
             text-align: center;
-            color: #555;
+            margin-top: 15px;
+            color: #6b7280;
+            text-decoration: none;
+            font-size: 13px;
         }
 
-        .colunas {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
+        @media (max-width: 600px) {
+
+            body {
+                padding: 10px;
+            }
+
+            .card {
+                padding: 20px 15px;
+                border-radius: 18px;
+            }
+
+            .numero {
+                font-size: 40px;
+            }
+
         }
 
-        .pequeno {
-            font-size: 14px;
-            color: #555;
-        }
-
-        @media (max-width: 650px) {
-            .caixa {
-                padding: 25px 12px;
-            }
-
-            h1 {
-                font-size: 36px;
-            }
-
-            .colunas {
-                grid-template-columns: 1fr;
-            }
-
-            th, td {
-                padding: 9px 4px;
-                font-size: 14px;
-            }
-        }
     </style>
+
 </head>
 
 <body>
 
-<div class="caixa">
+<div class="container">
 
-    <h1>🎮 AdivinheDev</h1>
+    <div class="card">
 
-    {% if not iniciado %}
+        <h1>🎮 AdivinheDev</h1>
 
-        <h2>Vamos começar!</h2>
-        <p>Digite seu nome para começar uma nova partida.</p>
-
-        <form method="POST">
-            <input
-                type="text"
-                name="nome"
-                placeholder="Seu nome"
-                maxlength="30"
-                required
-                autofocus
-            >
-            <br>
-            <button type="submit">Começar jogo 🚀</button>
-        </form>
-
-    {% else %}
-
-        <h2>Boa sorte, {{ nome }}! 🦫</h2>
-
-        <p>
-            Estou pensando em um número entre
-            <strong>1 e 100</strong>.
+        <p class="subtitulo">
+            Adivinhe o número secreto entre 1 e 100!
         </p>
 
-        <div class="tentativas">
-            ❤️ Tentativas: <strong>{{ tentativas }}/10</strong>
-        </div>
-
-        {% if not finalizado %}
+        {% if not iniciado %}
 
             <form method="POST">
+
                 <input
-                    id="palpite"
-                    type="number"
-                    name="palpite"
-                    min="1"
-                    max="100"
-                    placeholder="Digite seu palpite"
+                    type="text"
+                    name="nome"
+                    placeholder="Digite seu nome"
+                    maxlength="30"
                     required
                     autofocus
                 >
-                <br>
-                <button type="submit">Adivinhar! 🎯</button>
+
+                <button type="submit">
+                    Começar jogo 🚀
+                </button>
+
             </form>
 
-        {% endif %}
+        {% else %}
 
-        {% if mensagem %}
-            <div class="mensagem">{{ mensagem }}</div>
-        {% endif %}
+            <h2>
+                Olá, {{ nome }}! 👋
+            </h2>
 
-        {% if finalizado %}
+            {% if not finalizado %}
 
-            <div class="eficiencia">
-                📊 Eficiência: {{ eficiencia }}%
+                <div class="numero">
+                    🤔
+                </div>
+
+                <form method="POST">
+
+                    <input
+                        type="number"
+                        name="palpite"
+                        min="1"
+                        max="100"
+                        placeholder="Digite seu palpite"
+                        required
+                        autofocus
+                    >
+
+                    <button type="submit">
+                        Chutar 🎯
+                    </button>
+
+                </form>
+
+            {% else %}
+
+                <div class="numero">
+                    {% if eficiencia > 0 %}
+                        🏆
+                    {% else %}
+                        💀
+                    {% endif %}
+                </div>
+
+            {% endif %}
+
+            {% if mensagem %}
+
+                <div class="mensagem">
+                    {{ mensagem }}
+                </div>
+
+            {% endif %}
+
+            <div class="tentativas">
+
+                Tentativas:
+                {{ tentativas }} / 10
+
+                {% if finalizado %}
+
+                    <br><br>
+
+                    Eficiência:
+                    {{ eficiencia }}%
+
+                {% endif %}
+
             </div>
 
-            <p>
-                Sua pontuação nesta partida:
-                <strong>{{ eficiencia }} pontos</strong>
-            </p>
+            {% if finalizado %}
 
-            <form method="POST">
-                <button type="submit" name="novo_jogo" value="1">
-                    🔄 Jogar novamente
-                </button>
-            </form>
+                <form method="POST">
+
+                    <button
+                        class="novo-jogo"
+                        type="submit"
+                        name="novo_jogo"
+                        value="1"
+                    >
+                        🔄 Novo jogo
+                    </button>
+
+                </form>
+
+            {% endif %}
 
         {% endif %}
-
-    {% endif %}
-
-    <div class="colunas">
-
-        <div class="painel">
-            <h2>🏆 Ranking geral</h2>
-
-            <p class="pequeno">
-                Melhores pontuações de cada jogador.
-            </p>
-
-            <table>
-                <tr>
-                    <th>#</th>
-                    <th>Jogador</th>
-                    <th>Recorde</th>
-                </tr>
-
-                {% for jogador in ranking %}
-                    <tr>
-                        <td>
-                            {% if loop.index == 1 %}
-                                🥇
-                            {% elif loop.index == 2 %}
-                                🥈
-                            {% elif loop.index == 3 %}
-                                🥉
-                            {% else %}
-                                {{ loop.index }}
-                            {% endif %}
-                        </td>
-                        <td>{{ jogador["nome"] }}</td>
-                        <td>{{ jogador["melhor"] }}%</td>
-                    </tr>
-                {% else %}
-                    <tr>
-                        <td colspan="3" class="vazio">
-                            Ainda não há pontuações.
-                        </td>
-                    </tr>
-                {% endfor %}
-            </table>
-        </div>
-
-        <div class="painel">
-            <h2>📜 Minhas partidas</h2>
-
-            {% if iniciado %}
-                <p class="pequeno">
-                    Histórico de {{ nome }}.
-                </p>
-
-                <table>
-                    <tr>
-                        <th>Resultado</th>
-                        <th>Pontos</th>
-                        <th>Tentativas</th>
-                    </tr>
-
-                    {% for partida in historico %}
-                        <tr>
-                            <td>{{ partida["resultado"] }}</td>
-                            <td>{{ partida["pontuacao"] }}%</td>
-                            <td>{{ partida["tentativas"] }}/10</td>
-                        </tr>
-                    {% else %}
-                        <tr>
-                            <td colspan="3" class="vazio">
-                                Jogue para registrar sua primeira partida!
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </table>
-            {% else %}
-                <p class="vazio">
-                    Digite seu nome para ver seu histórico.
-                </p>
-            {% endif %}
-        </div>
 
     </div>
 
+
+    {% if ranking %}
+
+    <div class="card ranking">
+
+        <h2>🏆 Ranking</h2>
+
+        {% for jogador in ranking %}
+
+            <div class="linha">
+
+                <strong>
+                    {{ loop.index }}º
+                    {{ jogador["nome"] }}
+                </strong>
+
+                <span>
+                    {{ jogador["melhor"] }}%
+                </span>
+
+            </div>
+
+        {% endfor %}
+
+    </div>
+
+    {% endif %}
+
+
+    {% if iniciado and historico %}
+
+    <div class="card historico">
+
+        <h2>📜 Seu histórico</h2>
+
+        <table>
+
+            <tr>
+                <th>Pontos</th>
+                <th>Tentativas</th>
+                <th>Resultado</th>
+                <th>Data</th>
+            </tr>
+
+            {% for partida in historico %}
+
+            <tr>
+
+                <td>
+                    {{ partida["pontuacao"] }}%
+                </td>
+
+                <td>
+                    {{ partida["tentativas"] }}
+                </td>
+
+                <td>
+
+                    {% if partida["resultado"] == "Vitoria" %}
+
+                        <span class="vitoria">
+                            🏆 Vitória
+                        </span>
+
+                    {% else %}
+
+                        <span class="derrota">
+                            💀 Derrota
+                        </span>
+
+                    {% endif %}
+
+                </td>
+
+                <td>
+                    {{ partida["data"] }}
+                </td>
+
+            </tr>
+
+            {% endfor %}
+
+        </table>
+
+    </div>
+
+    {% endif %}
+
+    <a
+        class="admin-link"
+        href="/admin"
+    >
+        🔐 Área administrativa
+    </a>
+
 </div>
 
+
 <script>
-    window.onload = function() {
-        const campo = document.getElementById("palpite");
 
-        if (campo) {
-            campo.focus();
-        }
-    };
+    function tocarErro() {
 
-    function tocarSom(tipo) {
-        const audio = new AudioContext();
-        const oscilador = audio.createOscillator();
-        const ganho = audio.createGain();
+        try {
 
-        oscilador.connect(ganho);
-        ganho.connect(audio.destination);
+            const audio =
+                new AudioContext();
 
-        if (tipo === "erro") {
-            oscilador.type = "sawtooth";
+            const oscilador =
+                audio.createOscillator();
+
+            const ganho =
+                audio.createGain();
+
             oscilador.frequency.value = 180;
-            ganho.gain.value = 0.2;
+
+            oscilador.connect(ganho);
+
+            ganho.connect(audio.destination);
+
             oscilador.start();
-            oscilador.stop(audio.currentTime + 0.25);
-        } else {
-            oscilador.type = "sine";
-            oscilador.frequency.setValueAtTime(523, audio.currentTime);
-            oscilador.frequency.setValueAtTime(659, audio.currentTime + 0.15);
-            oscilador.frequency.setValueAtTime(784, audio.currentTime + 0.30);
-            ganho.gain.value = 0.2;
-            oscilador.start();
-            oscilador.stop(audio.currentTime + 0.55);
-        }
+
+            ganho.gain.exponentialRampToValueAtTime(
+                0.001,
+                audio.currentTime + 0.25
+            );
+
+            oscilador.stop(
+                audio.currentTime + 0.25
+            );
+
+        } catch (e) {}
+
     }
 
-    const resultado = "{{ resultado }}";
-
-    if (resultado === "erro") {
-        tocarSom("erro");
-    }
-
-    if (resultado === "acerto") {
-        tocarSom("acerto");
-    }
 </script>
 
 </body>
+
 </html>
 """
 
 
+# =========================================================
+# JOGO
+# =========================================================
+
 @app.route("/", methods=["GET", "POST"])
 def inicio():
+
+    visitor_id = request.cookies.get("visitor_id")
+
+    if not visitor_id:
+        visitor_id = str(uuid.uuid4())
+
+    with conectar() as conexao:
+        conexao.execute("""
+            INSERT INTO visitas (visitante_id)
+            VALUES (?)
+            ON CONFLICT(visitante_id)
+            DO UPDATE SET ultima_visita = CURRENT_TIMESTAMP
+        """, (visitor_id,))
 
     if request.method == "POST" and "nome" in request.form:
 
         nome = request.form["nome"].strip()
 
         if nome:
+
             session.clear()
+
             session["nome"] = nome[:30]
             session["numero"] = random.randint(1, 100)
             session["tentativas"] = 0
@@ -465,13 +574,18 @@ def inicio():
 
     elif request.method == "POST" and "palpite" in request.form:
 
-        if (
-            "nome" in session
-            and not session.get("finalizado", False)
+        if "nome" in session and not session.get(
+            "finalizado",
+            False
         ):
+
             try:
-                palpite = int(request.form["palpite"])
+                palpite = int(
+                    request.form["palpite"]
+                )
+
             except (ValueError, TypeError):
+
                 palpite = 0
 
             if palpite < 1 or palpite > 100:
@@ -479,25 +593,34 @@ def inicio():
                 session["mensagem"] = (
                     "⚠️ Digite um número entre 1 e 100!"
                 )
+
                 session["resultado"] = ""
 
             else:
-                palpites = session.get("palpites", [])
+
+                palpites = session.get(
+                    "palpites",
+                    []
+                )
 
                 if palpite in palpites:
 
                     session["mensagem"] = (
                         "⚠️ Você já tentou esse número!"
                     )
+
                     session["resultado"] = ""
 
                 else:
 
                     palpites.append(palpite)
+
                     session["palpites"] = palpites
+
                     session["tentativas"] += 1
 
                     numero = session["numero"]
+
                     tentativas = session["tentativas"]
 
                     if palpite == numero:
@@ -508,38 +631,61 @@ def inicio():
                         )
 
                         session["eficiencia"] = eficiencia
+
                         session["mensagem"] = (
-                            f"🎉 PARABÉNS, {session['nome']}! "
-                            "Você acertou o número!"
+                            f"🎉 PARABÉNS, "
+                            f"{session['nome']}! "
+                            f"Você acertou o número!"
                         )
+
                         session["finalizado"] = True
+
                         session["resultado"] = "acerto"
 
                     elif palpite < numero:
 
-                        session["mensagem"] = "📈 O número é MAIOR!"
+                        session["mensagem"] = (
+                            "📈 O número é MAIOR!"
+                        )
+
                         session["resultado"] = "erro"
 
                     else:
 
-                        session["mensagem"] = "📉 O número é MENOR!"
+                        session["mensagem"] = (
+                            "📉 O número é MENOR!"
+                        )
+
                         session["resultado"] = "erro"
 
-                    if tentativas >= 10 and palpite != numero:
+                    if (
+                        tentativas >= 10
+                        and palpite != numero
+                    ):
 
                         session["mensagem"] = (
-                            f"💀 Fim de jogo! O número era {numero}."
+                            f"💀 Fim de jogo! "
+                            f"O número era {numero}."
                         )
+
                         session["eficiencia"] = 0
+
                         session["finalizado"] = True
 
                     if (
                         session["finalizado"]
-                        and not session.get("salvo", False)
+                        and not session.get(
+                            "salvo",
+                            False
+                        )
                     ):
+
                         if palpite == numero:
+
                             resultado = "Vitoria"
+
                         else:
+
                             resultado = "Derrota"
 
                         salvar_pontuacao(
@@ -552,38 +698,81 @@ def inicio():
                         session["salvo"] = True
 
     iniciado = "nome" in session
+
     ranking = buscar_ranking()
 
     historico = (
-        buscar_historico(session["nome"])
-        if iniciado else []
+        buscar_historico(
+            session["nome"]
+        )
+        if iniciado
+        else []
     )
 
-    return render_template_string(
-        HTML,
-        iniciado=iniciado,
-        nome=session.get("nome", ""),
-        tentativas=session.get("tentativas", 0),
-        mensagem=session.get("mensagem", ""),
-        finalizado=session.get("finalizado", False),
-        eficiencia=session.get("eficiencia", 0),
-        resultado=session.get("resultado", ""),
-        ranking=ranking,
-        historico=historico
+    resposta = make_response(
+        render_template_string(
+            HTML,
+            iniciado=iniciado,
+            nome=session.get("nome", ""),
+            tentativas=session.get(
+                "tentativas",
+                0
+            ),
+            mensagem=session.get(
+                "mensagem",
+                ""
+            ),
+            finalizado=session.get(
+                "finalizado",
+                False
+            ),
+            eficiencia=session.get(
+                "eficiencia",
+                0
+            ),
+            resultado=session.get(
+                "resultado",
+                ""
+            ),
+            ranking=ranking,
+            historico=historico
+        )
     )
 
-ADMIN_SENHA = os.environ.get("ADMIN_SENHA", "adivinhedev-admin")
+    if not request.cookies.get("visitor_id"):
 
+        resposta.set_cookie(
+            "visitor_id",
+            visitor_id,
+            max_age=60 * 60 * 24 * 365 * 2,
+            httponly=True,
+            samesite="Lax"
+        )
+
+    return resposta
+
+
+# =========================================================
+# ADMIN - LOGIN
+# =========================================================
 
 HTML_ADMIN_LOGIN = """
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
+
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
     <title>Admin - AdivinheDev</title>
 
     <style>
+
         * {
             box-sizing: border-box;
         }
@@ -593,7 +782,11 @@ HTML_ADMIN_LOGIN = """
             min-height: 100vh;
             padding: 20px;
             font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #111827, #2563eb);
+            background: linear-gradient(
+                135deg,
+                #111827,
+                #2563eb
+            );
             display: flex;
             justify-content: center;
             align-items: center;
@@ -636,7 +829,9 @@ HTML_ADMIN_LOGIN = """
             color: #dc2626;
             font-weight: bold;
         }
+
     </style>
+
 </head>
 
 <body>
@@ -648,10 +843,15 @@ HTML_ADMIN_LOGIN = """
     <p>AdivinheDev 🎮</p>
 
     {% if erro %}
-        <p class="erro">❌ Senha incorreta!</p>
+
+        <p class="erro">
+            ❌ Senha incorreta!
+        </p>
+
     {% endif %}
 
     <form method="POST">
+
         <input
             type="password"
             name="senha"
@@ -665,25 +865,38 @@ HTML_ADMIN_LOGIN = """
         <button type="submit">
             Entrar 🔑
         </button>
+
     </form>
 
 </div>
 
 </body>
+
 </html>
 """
 
 
+# =========================================================
+# ADMIN - PAINEL
+# =========================================================
+
 HTML_ADMIN = """
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
+
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
 
     <title>Painel Admin - AdivinheDev</title>
 
     <style>
+
         * {
             box-sizing: border-box;
         }
@@ -693,7 +906,11 @@ HTML_ADMIN = """
             min-height: 100vh;
             padding: 25px 12px;
             font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #111827, #2563eb);
+            background: linear-gradient(
+                135deg,
+                #111827,
+                #2563eb
+            );
         }
 
         .caixa {
@@ -745,6 +962,10 @@ HTML_ADMIN = """
             margin-top: 5px;
         }
 
+        .online {
+            background: #ecfdf5;
+        }
+
         .voltar {
             display: block;
             width: fit-content;
@@ -757,6 +978,7 @@ HTML_ADMIN = """
         }
 
         @media (max-width: 600px) {
+
             .caixa {
                 padding: 25px 15px;
             }
@@ -764,15 +986,20 @@ HTML_ADMIN = """
             .estatisticas {
                 grid-template-columns: 1fr;
             }
+
         }
+
     </style>
+
 </head>
 
 <body>
 
 <div class="caixa">
 
-    <h1>📊 Painel do AdivinheDev</h1>
+    <h1>
+        📊 Painel do AdivinheDev
+    </h1>
 
     <p class="subtitulo">
         Estatísticas do seu jogo 🎮
@@ -781,60 +1008,157 @@ HTML_ADMIN = """
     <div class="estatisticas">
 
         <div class="card">
-            <div class="icone">👥</div>
-            <div class="numero">{{ jogadores }}</div>
-            <div class="nome">Jogadores únicos</div>
+
+            <div class="icone">
+                👥
+            </div>
+
+            <div class="numero">
+                {{ visitas }}
+            </div>
+
+            <div class="nome">
+                Visitantes únicos
+            </div>
+
         </div>
 
-        <div class="card">
-            <div class="icone">🎮</div>
-            <div class="numero">{{ partidas }}</div>
-            <div class="nome">Partidas concluídas</div>
+
+        <div class="card online">
+
+            <div class="icone">
+                🟢
+            </div>
+
+            <div class="numero">
+                {{ online }}
+            </div>
+
+            <div class="nome">
+                Online agora*
+            </div>
+
         </div>
 
-        <div class="card">
-            <div class="icone">🏆</div>
-            <div class="numero">{{ vitorias }}</div>
-            <div class="nome">Vitórias</div>
-        </div>
 
         <div class="card">
-            <div class="icone">💀</div>
-            <div class="numero">{{ derrotas }}</div>
-            <div class="nome">Derrotas</div>
+
+            <div class="icone">
+                🎮
+            </div>
+
+            <div class="numero">
+                {{ partidas }}
+            </div>
+
+            <div class="nome">
+                Partidas concluídas
+            </div>
+
         </div>
 
+
         <div class="card">
-            <div class="icone">📈</div>
-            <div class="numero">{{ taxa }}%</div>
-            <div class="nome">Taxa de vitória</div>
+
+            <div class="icone">
+                🏆
+            </div>
+
+            <div class="numero">
+                {{ vitorias }}
+            </div>
+
+            <div class="nome">
+                Vitórias
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="icone">
+                💀
+            </div>
+
+            <div class="numero">
+                {{ derrotas }}
+            </div>
+
+            <div class="nome">
+                Derrotas
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="icone">
+                📈
+            </div>
+
+            <div class="numero">
+                {{ taxa }}%
+            </div>
+
+            <div class="nome">
+                Taxa de vitória
+            </div>
+
         </div>
 
     </div>
 
-    <a class="voltar" href="/">
+    <p
+        style="
+            text-align:center;
+            color:#777;
+            font-size:13px;
+            margin-top:20px;
+        "
+    >
+        * Online = visitante que acessou o jogo
+        nos últimos 60 segundos.
+    </p>
+
+    <a
+        class="voltar"
+        href="/"
+    >
         🎮 Voltar para o jogo
     </a>
 
 </div>
 
 </body>
+
 </html>
 """
 
+
+# =========================================================
+# ROTA ADMIN
+# =========================================================
 
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
 
     if not session.get("admin"):
+
         erro = False
 
         if request.method == "POST":
 
-            senha = request.form.get("senha", "")
+            senha = request.form.get(
+                "senha",
+                ""
+            )
 
             if senha == ADMIN_SENHA:
+
                 session["admin"] = True
+
                 return redirect("/admin")
 
             erro = True
@@ -846,9 +1170,16 @@ def admin():
 
     with conectar() as conexao:
 
-        jogadores = conexao.execute("""
-            SELECT COUNT(DISTINCT nome COLLATE NOCASE)
-            FROM pontuacoes
+        visitas = conexao.execute("""
+            SELECT COUNT(*)
+            FROM visitas
+        """).fetchone()[0]
+
+        online = conexao.execute("""
+            SELECT COUNT(*)
+            FROM visitas
+            WHERE ultima_visita >=
+            datetime('now', '-60 seconds')
         """).fetchone()[0]
 
         partidas = conexao.execute("""
@@ -869,13 +1200,20 @@ def admin():
         """).fetchone()[0]
 
     if partidas > 0:
-        taxa = round((vitorias / partidas) * 100, 1)
+
+        taxa = round(
+            (vitorias / partidas) * 100,
+            1
+        )
+
     else:
+
         taxa = 0
 
     return render_template_string(
         HTML_ADMIN,
-        jogadores=jogadores,
+        visitas=visitas,
+        online=online,
         partidas=partidas,
         vitorias=vitorias,
         derrotas=derrotas,
@@ -883,9 +1221,16 @@ def admin():
     )
 
 
-# Inicializa o banco de dados
+# =========================================================
+# INICIA BANCO
+# =========================================================
 
 criar_banco()
+
+
+# =========================================================
+# EXECUÇÃO LOCAL
+# =========================================================
 
 if __name__ == "__main__":
     app.run(debug=True)
