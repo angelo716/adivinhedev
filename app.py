@@ -1,7 +1,13 @@
-from flask import Flask, request, render_template_string, session
+from flask import Flask, request, render_template_string, session, redirect
 import random
 import sqlite3
 from pathlib import Path
+import os
+
+app = Flask(__name__)
+app.secret_key = "adivinhedev-chave-secreta"
+
+BANCO = Path(__file__).with_name("ranking.db")
 
 app = Flask(__name__)
 app.secret_key = "adivinhedev-chave-secreta"
@@ -566,6 +572,318 @@ def inicio():
         historico=historico
     )
 
+ADMIN_SENHA = os.environ.get("ADMIN_SENHA", "adivinhedev-admin")
+
+
+HTML_ADMIN_LOGIN = """
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - AdivinheDev</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #111827, #2563eb);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .caixa {
+            width: 100%;
+            max-width: 450px;
+            background: white;
+            border-radius: 25px;
+            padding: 35px 25px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,.35);
+        }
+
+        h1 {
+            margin-top: 0;
+        }
+
+        input {
+            width: 100%;
+            padding: 15px;
+            margin: 15px 0;
+            font-size: 18px;
+            border: 2px solid #aaa;
+            border-radius: 12px;
+        }
+
+        button {
+            padding: 14px 25px;
+            font-size: 18px;
+            border: none;
+            border-radius: 12px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+
+        .erro {
+            color: #dc2626;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="caixa">
+
+    <h1>🔐 Painel Admin</h1>
+
+    <p>AdivinheDev 🎮</p>
+
+    {% if erro %}
+        <p class="erro">❌ Senha incorreta!</p>
+    {% endif %}
+
+    <form method="POST">
+        <input
+            type="password"
+            name="senha"
+            placeholder="Senha"
+            required
+            autofocus
+        >
+
+        <br>
+
+        <button type="submit">
+            Entrar 🔑
+        </button>
+    </form>
+
+</div>
+
+</body>
+</html>
+"""
+
+
+HTML_ADMIN = """
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Painel Admin - AdivinheDev</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            padding: 25px 12px;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #111827, #2563eb);
+        }
+
+        .caixa {
+            width: 100%;
+            max-width: 950px;
+            margin: auto;
+            background: white;
+            border-radius: 25px;
+            padding: 35px;
+            box-shadow: 0 20px 60px rgba(0,0,0,.35);
+        }
+
+        h1 {
+            text-align: center;
+            margin-top: 0;
+        }
+
+        .subtitulo {
+            text-align: center;
+            color: #555;
+        }
+
+        .estatisticas {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 18px;
+            margin-top: 30px;
+        }
+
+        .card {
+            padding: 25px;
+            border-radius: 18px;
+            background: #f3f4f6;
+            text-align: center;
+        }
+
+        .icone {
+            font-size: 35px;
+        }
+
+        .numero {
+            font-size: 35px;
+            font-weight: bold;
+            margin-top: 8px;
+        }
+
+        .nome {
+            color: #555;
+            margin-top: 5px;
+        }
+
+        .voltar {
+            display: block;
+            width: fit-content;
+            margin: 30px auto 0;
+            padding: 13px 22px;
+            background: #2563eb;
+            color: white;
+            text-decoration: none;
+            border-radius: 12px;
+        }
+
+        @media (max-width: 600px) {
+            .caixa {
+                padding: 25px 15px;
+            }
+
+            .estatisticas {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="caixa">
+
+    <h1>📊 Painel do AdivinheDev</h1>
+
+    <p class="subtitulo">
+        Estatísticas do seu jogo 🎮
+    </p>
+
+    <div class="estatisticas">
+
+        <div class="card">
+            <div class="icone">👥</div>
+            <div class="numero">{{ jogadores }}</div>
+            <div class="nome">Jogadores únicos</div>
+        </div>
+
+        <div class="card">
+            <div class="icone">🎮</div>
+            <div class="numero">{{ partidas }}</div>
+            <div class="nome">Partidas concluídas</div>
+        </div>
+
+        <div class="card">
+            <div class="icone">🏆</div>
+            <div class="numero">{{ vitorias }}</div>
+            <div class="nome">Vitórias</div>
+        </div>
+
+        <div class="card">
+            <div class="icone">💀</div>
+            <div class="numero">{{ derrotas }}</div>
+            <div class="nome">Derrotas</div>
+        </div>
+
+        <div class="card">
+            <div class="icone">📈</div>
+            <div class="numero">{{ taxa }}%</div>
+            <div class="nome">Taxa de vitória</div>
+        </div>
+
+    </div>
+
+    <a class="voltar" href="/">
+        🎮 Voltar para o jogo
+    </a>
+
+</div>
+
+</body>
+</html>
+"""
+
+
+@app.route("/admin", methods=["GET", "POST"])
+def admin():
+
+    if not session.get("admin"):
+        erro = False
+
+        if request.method == "POST":
+
+            senha = request.form.get("senha", "")
+
+            if senha == ADMIN_SENHA:
+                session["admin"] = True
+                return redirect("/admin")
+
+            erro = True
+
+        return render_template_string(
+            HTML_ADMIN_LOGIN,
+            erro=erro
+        )
+
+    with conectar() as conexao:
+
+        jogadores = conexao.execute("""
+            SELECT COUNT(DISTINCT nome COLLATE NOCASE)
+            FROM pontuacoes
+        """).fetchone()[0]
+
+        partidas = conexao.execute("""
+            SELECT COUNT(*)
+            FROM pontuacoes
+        """).fetchone()[0]
+
+        vitorias = conexao.execute("""
+            SELECT COUNT(*)
+            FROM pontuacoes
+            WHERE resultado = 'Vitoria'
+        """).fetchone()[0]
+
+        derrotas = conexao.execute("""
+            SELECT COUNT(*)
+            FROM pontuacoes
+            WHERE resultado = 'Derrota'
+        """).fetchone()[0]
+
+    if partidas > 0:
+        taxa = round((vitorias / partidas) * 100, 1)
+    else:
+        taxa = 0
+
+    return render_template_string(
+        HTML_ADMIN,
+        jogadores=jogadores,
+        partidas=partidas,
+        vitorias=vitorias,
+        derrotas=derrotas,
+        taxa=taxa
+    )
+
+
+# Inicializa o banco de dados
 
 criar_banco()
 
