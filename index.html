@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corrija a Palavra</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+    <main class="jogo">
+        <h1>Corrija a Palavra</h1>
+        <p class="subtitulo">Corrija a palavra antes que a capivara coma sua batata!</p>
+
+        <section class="painel">
+            <div class="info">
+                <span id="nivel">Nível: Bebê 🍼</span>
+                <span id="placar">Vitórias: 0</span>
+            </div>
+
+            <p class="aviso">Você terá 3 tentativas para cada palavra.</p>
+
+            <div class="palavra-caixa">
+                <p>Corrija esta palavra:</p>
+                <strong id="palavra-errada">CARREGANDO...</strong>
+            </div>
+
+            <form id="form-resposta">
+                <input
+                    id="resposta"
+                    type="text"
+                    placeholder="Digite a palavra correta"
+                    autocomplete="off"
+                    required
+                >
+                <button type="submit">Corrigir</button>
+            </form>
+
+            <p id="tentativas">Tentativas restantes: 3</p>
+            <p id="mensagem"></p>
+
+            <button id="reiniciar" type="button">Reiniciar jogo</button>
+        </section>
+    </main>
+
+    <script>
+const nivelBebe = {
+    "caza":"casa","gatu":"gato","patu":"pato","sapu":"sapo","bolla":"bola",
+    "cachoro":"cachorro","mininu":"menino","minina":"menina","bonitaa":"bonita","feiu":"feio",
+    "leiti":"leite","messa":"mesa","pratu":"prato","livru":"livro","canetaa":"caneta",
+    "janella":"janela","cadera":"cadeira","sorvetee":"sorvete","escolaa":"escola","amigu":"amigo",
+    "cavaloo":"cavalo","bebee":"bebê","papeel":"papel","copoo":"copo","camisaa":"camisa"
+};
+
+const nivelFacil = {
+    "geito":"jeito","poblema":"problema","menas":"menos","seje":"seja","enchergar":"enxergar",
+    "comcerteza":"com certeza","derrepente":"de repente","concerteza":"com certeza","tambeim":"também","voçe":"você",
+    "faser":"fazer","muinto":"muito","trousse":"trouxe","calsado":"calçado","adivogado":"advogado",
+    "pessoua":"pessoa","familha":"família","almentar":"aumentar","dificio":"difícil","fauta":"falta",
+    "quiz":"quis","voutar":"voltar","preucupado":"preocupado","veses":"vezes","muintas":"muitas"
+};
+
+const nivelMedio = {
+    "excessao":"exceção","previlégio":"privilégio","beneficiente":"beneficente","reinvindicação":"reivindicação","impecilho":"empecilho",
+    "entreterimento":"entretenimento","paralização":"paralisação","ascenção":"ascensão","desinteria":"disenteria","extrangeiro":"estrangeiro",
+    "obseção":"obsessão","concidência":"coincidência","mendingo":"mendigo","mortandela":"mortadela","largatixa":"lagartixa",
+    "circustância":"circunstância","recisão":"rescisão","suspenção":"suspensão","interece":"interesse","enchada":"enxada",
+    "cabeleleiro":"cabeleireiro","advinhar":"adivinhar","compania":"companhia","pretenção":"pretensão","enchoval":"enxoval"
+};
+
+const nivelDificil = {
+    "irriquieto":"irrequieto","conjuje":"cônjuge","imbelezer":"embelezar","estelheonato":"estelionato","intervensão":"intervenção",
+    "indispençável":"indispensável","excecional":"excepcional","reinterar":"reiterar","procastinação":"procrastinação","supérfulo":"supérfluo",
+    "reminicência":"reminiscência","paralepipedo":"paralelepípedo","impecavel":"impecável","perpectiva":"perspectiva","imprecindível":"imprescindível",
+    "descriminação":"discriminação","estraordinário":"extraordinário","hieraquia":"hierarquia","resucitar":"ressuscitar","sobresalente":"sobressalente",
+    "trascendência":"transcendência","conciente":"consciente","recapchutagem":"recauchutagem","excessão":"exceção","subterraneo":"subterrâneo"
+};
+
+const niveis = [
+    { nome: "Bebê 🍼", palavras: nivelBebe },
+    { nome: "Fácil 🙂", palavras: nivelFacil },
+    { nome: "Médio 😎", palavras: nivelMedio },
+    { nome: "Difícil 🔥", palavras: nivelDificil }
+];
+
+let numeroDoNivel = 0;
+let palavrasRestantes = [];
+let palavraAtual;
+let tentativas = 3;
+let vitorias = 0;
+let jogoAcabou = false;
+
+const nivelTexto = document.getElementById("nivel");
+const placarTexto = document.getElementById("placar");
+const palavraErradaTexto = document.getElementById("palavra-errada");
+const tentativasTexto = document.getElementById("tentativas");
+const mensagemTexto = document.getElementById("mensagem");
+const respostaInput = document.getElementById("resposta");
+const formulario = document.getElementById("form-resposta");
+const botaoReiniciar = document.getElementById("reiniciar");
+
+let jogadorId = localStorage.getItem("jogador_id");
+
+if (!jogadorId) {
+    jogadorId = crypto.randomUUID();
+    localStorage.setItem("jogador_id", jogadorId);
+}
+
+function avisarQueEstaOnline() {
+    fetch("/api/online", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            jogador_id: jogadorId
+        })
+    });
+}
+
+function registrarResultado(resultado) {
+    fetch("/api/resultado", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            resultado: resultado
+        })
+    });
+}
+
+function normalizar(texto) {
+    return texto.trim().toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+}
+
+function proximaPalavra() {
+    const numeroAleatorio = Math.floor(
+        Math.random() * palavrasRestantes.length
+    );
+
+    palavraAtual = palavrasRestantes[numeroAleatorio];
+    tentativas = 3;
+
+    palavraErradaTexto.textContent = palavraAtual[0].toUpperCase();
+    tentativasTexto.textContent = "Tentativas restantes: 3";
+    respostaInput.value = "";
+    respostaInput.focus();
+}
+
+function iniciarNivel() {
+    const nivel = niveis[numeroDoNivel];
+
+    palavrasRestantes = Object.entries(nivel.palavras);
+    nivelTexto.textContent = `Nível: ${nivel.nome}`;
+    mensagemTexto.textContent =
+        `Acerte as ${palavrasRestantes.length} palavras para avançar.`;
+
+    proximaPalavra();
+}
+
+function atualizarPlacar() {
+    placarTexto.textContent = `Vitórias: ${vitorias}`;
+}
+
+formulario.addEventListener("submit", function (evento) {
+    evento.preventDefault();
+
+    if (jogoAcabou) {
+        return;
+    }
+
+    const resposta = respostaInput.value;
+    const correta = palavraAtual[1];
+
+    if (normalizar(resposta) === normalizar(correta)) {
+        vitorias += 1;
+        atualizarPlacar();
+
+        palavrasRestantes = palavrasRestantes.filter(
+            palavra => palavra[0] !== palavraAtual[0]
+        );
+
+        if (palavrasRestantes.length === 0) {
+            numeroDoNivel += 1;
+
+            if (numeroDoNivel === niveis.length) {
+                palavraErradaTexto.textContent = "VOCÊ ZEROU!";
+                mensagemTexto.textContent =
+                    "🏆 A capivara está orgulhosa de você! 🦫🥔";
+                jogoAcabou = true;
+                respostaInput.disabled = true;
+                registrarResultado("vitoria");
+                return;
+            }
+
+            iniciarNivel();
+            return;
+        }
+
+        mensagemTexto.textContent = "Acertou! Próxima palavra!";
+        proximaPalavra();
+        return;
+    }
+
+    tentativas -= 1;
+    tentativasTexto.textContent =
+        `Tentativas restantes: ${tentativas}`;
+
+    if (tentativas === 0) {
+        palavraErradaTexto.textContent = "GAME OVER";
+        mensagemTexto.textContent =
+            `A resposta era: ${correta.toUpperCase()}`;
+        jogoAcabou = true;
+        respostaInput.disabled = true;
+        registrarResultado("derrota");
+    } else {
+        mensagemTexto.textContent = "Errou! Tente novamente.";
+        respostaInput.value = "";
+        respostaInput.focus();
+    }
+});
+
+botaoReiniciar.addEventListener("click", function () {
+    numeroDoNivel = 0;
+    vitorias = 0;
+    jogoAcabou = false;
+    respostaInput.disabled = false;
+    atualizarPlacar();
+    iniciarNivel();
+});
+
+avisarQueEstaOnline();
+setInterval(avisarQueEstaOnline, 10000);
+
+atualizarPlacar();
+iniciarNivel();
+</script>
+</body>
+</html>

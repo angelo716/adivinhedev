@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Admin</title>
+    <link rel="stylesheet" href="/style.css">
+
+    <style>
+        .numero {
+            display: block;
+            margin-top: 10px;
+            font-size: 3rem;
+            color: #ffe28a;
+        }
+
+        .cartoes {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .cartao {
+            padding: 18px;
+            border-radius: 14px;
+            background: #315f36;
+        }
+
+        @media (max-width: 500px) {
+            .cartoes {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="jogo">
+        <h1>Painel Admin</h1>
+        <p class="subtitulo">Estatísticas da capivara 🦫🥔</p>
+
+        <section class="painel">
+            <div class="cartoes">
+                <div class="cartao">
+                    Jogadores online
+                    <strong class="numero" id="online">0</strong>
+                </div>
+
+                <div class="cartao">
+                    Vitórias
+                    <strong class="numero" id="vitorias">0</strong>
+                </div>
+
+                <div class="cartao">
+                    Derrotas
+                    <strong class="numero" id="derrotas">0</strong>
+                </div>
+            </div>
+
+            <p id="atualizado">Carregando dados...</p>
+        </section>
+    </main>
+
+    <script>
+        async function atualizarEstatisticas() {
+            const resposta = await fetch("/api/estatisticas");
+            const dados = await resposta.json();
+
+            document.getElementById("online").textContent = dados.online;
+            document.getElementById("vitorias").textContent = dados.vitorias;
+            document.getElementById("derrotas").textContent = dados.derrotas;
+
+            document.getElementById("atualizado").textContent =
+                "Atualizado agora.";
+        }
+
+        atualizarEstatisticas();
+        setInterval(atualizarEstatisticas, 5000);
+    </script>
+</body>
+</html>
